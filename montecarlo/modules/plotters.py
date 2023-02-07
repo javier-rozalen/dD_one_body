@@ -8,23 +8,26 @@ import numpy as np
 plt.rcParams['agg.path.chunksize'] = 10000
 
 ######################## PLOTTER FUNCTIONS ########################
-def minimisation_plots(x_axis, y_axis, K, U, y_exact, d, x=[], y=[], z=[], 
+def minimisation_plots(train_data, x_axis, y_axis, K, U, y_exact, d, x=[], y=[], z=[], 
                        overlap=[], path_plot='', show_last_plot=True, 
                        save=False):
     
     if d == 1:
-        fig = plt.figure(figsize=(10, 8))
+        fig = plt.figure(figsize=(12, 8))
         
         # Wave function plot
-        ax = fig.add_subplot(2, 2, 1)
+        ax = fig.add_subplot(1, 2, 1)
         target = lambda x : (1/np.pi)**(1/4) * np.exp(-(x**2)/2)
         ax.plot(x.detach().numpy(), target(x.detach().numpy()), label='$\psi_{\mathrm{targ}}$', 
                    color='red', linestyle='dashed')
         ax.plot(x.detach().numpy(), z.detach().numpy(), color='blue', label='$\psi_{\mathrm{ANN}}$')
+        counts, bins = np.histogram(train_data.detach().numpy(), 50, density=True)
+        plt.stairs(counts, bins)
+        #ax.set_ylim(0., 1.)
         ax.legend(fontsize=12)
         
         # Energies plot 
-        ax = fig.add_subplot(2, 1, 2)
+        ax = fig.add_subplot(1, 2, 2)
         #ax.set_ylim(-1, 5)
         ax.plot(x_axis, y_axis, label='E', color='blue')
         #ax.plot(x_axis, K, label='K', color='orange')

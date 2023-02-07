@@ -160,7 +160,8 @@ for d in split(dims, nchunks)[which_chunk]:
         
         ################### INTEGRATION ###################
         # We construct the weight matrix. It has dimension (N^d)
-        w_trpz = torch.ones(N**d) * (h**d)
+        #w_trpz = torch.ones(N**d) * (h**d)
+        w_trpz = h**d
         E_theoretical = 0 + d/2
         
         # Target wave function

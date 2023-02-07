@@ -153,10 +153,10 @@ def round_to_1(x):
     return rounded_number
 
 def train_loop(model, train_data, x2_y2_z2, loss_fn, optimizer):
-    optimizer.zero_grad()
     E, psi = loss_fn(model=model,
                      train_data=train_data, 
                      x2_y2_z2=x2_y2_z2)
+    optimizer.zero_grad()
     E.backward()
     optimizer.step()
     
