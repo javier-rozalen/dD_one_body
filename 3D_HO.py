@@ -41,7 +41,7 @@ leap = 200
 # Pretraining params
 pretrain = True
 pre_epochs = 2000
-pre_leap = 500
+pre_leap = 100
 path_pretrain = './pre.pt'
 
 # Computation graph prameters
@@ -53,7 +53,7 @@ create_graph = True
 cg_name = f'cg_retain{retain_graph}_create{create_graph}'
 
 # Mesh parameters
-N = 50 # points per dimension
+N = 500 # points per dimension
 a = -5
 b = 5
 h = (b-a) / (N)
@@ -61,11 +61,11 @@ h = (b-a) / (N)
 loss_fn = HO_energy
 
 # Training hyperparameters
-dims = [3]
-hidden_neurons = [300]
+dims = [2]
+hidden_neurons = [100]
 actfuns = ['Sigmoid']
 optimizers = ['RMSprop']
-learning_rates = [0.05] # Use decimal notation 
+learning_rates = [0.005] # Use decimal notation 
 epsilon = 1e-8
 smoothing_constants = [0.9]
 momenta = [0.0]
@@ -277,7 +277,7 @@ for d in split(dims, nchunks)[which_chunk]:
                     make_dot(E, params=dict(list(psi_ann.named_parameters())), 
                              show_attrs=show_attrs, show_saved=show_saved).render(cg_name, 
                                                                                   format='pdf')
-                print(f'\Right after pretraining: \nOverlap: {overlap}, \nK: {K}, ' \
+                print(f'\nRight after pretraining: \nOverlap: {overlap}, \nK: {K}, ' \
                       f'\nU: {U}, \nE: {E}')
             optimizer.zero_grad()
             E.backward()

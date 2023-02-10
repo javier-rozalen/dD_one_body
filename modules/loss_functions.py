@@ -75,4 +75,14 @@ def overlap(model, train_data, w_i, target_dD):
     
     return overlap, (1-overlap)**2, psi_normalized
 
+def MSE(model, train_data, w_i, target_dD):
+    # Psi
+    psi = model(train_data) # wave function, dimension = (N)    
+    N = w_i * torch.sum(psi**2) # squared ANN norm
+    psi_normalized = psi / torch.sqrt(N)
+    mse = torch.nn.MSELoss()(psi_normalized, target_dD)
+    
+    return mse, psi_normalized
+
+
     
