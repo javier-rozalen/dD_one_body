@@ -20,10 +20,10 @@ def minimisation_plots(train_data, x_axis, y_axis, K, U, y_exact, d, x=[], y=[],
         target = lambda x : (1/np.pi)**(1/4) * np.exp(-(x**2)/2)
         ax.plot(x.detach().numpy(), target(x.detach().numpy()), label='$\psi_{\mathrm{targ}}$', 
                    color='red', linestyle='dashed')
-        ax.plot(x.detach().numpy(), z.detach().numpy(), color='blue', label='$\psi_{\mathrm{ANN}}$')
-        counts, bins = np.histogram(train_data.detach().numpy(), 50, density=True)
-        plt.stairs(counts, bins)
-        #ax.set_ylim(0., 1.)
+        ax.scatter(train_data.detach().numpy(), z.detach().numpy(), color='blue', label='$\psi_{\mathrm{ANN}}$')
+        counts, bins = np.histogram(train_data.detach().numpy(), 50, density=False)
+        #plt.stairs(counts, bins)
+        ax.set_ylim(0., 1.)
         ax.legend(fontsize=12)
         
         # Energies plot 

@@ -9,12 +9,15 @@ import torch, time, math
 import numpy as np
 from tqdm import tqdm
 from itertools import product
+import matplotlib.pyplot as plt
+from torchviz import make_dot
+from modules.ada_hessian import AdaHessian
 
 # My modules
 import modules.neural_networks as neural_networks
-from modules.plotters import minimisation_plots
+from modules.plotters import minimisation_plots, pretraining_plots
 from modules.aux_functions import train_loop, show_layers, split, dir_support
-from modules.loss_functions import HO_energy
+from modules.loss_functions import HO_energy, HO_energy_2der, overlap
 
 #################### ADJUSTABLE PARAMETERS ####################
 # General parameters
@@ -22,33 +25,50 @@ device = 'cpu'
 net_archs = ['1sc']
 nchunks_general = 1
 which_chunk = int(sys.argv[1]) if nchunks_general != 1 else 0
+seed = 1
+torch.manual_seed(seed)
+recompute = True
+nders = 1
+
+# Traning params
 save_model = False
 save_plot = False
-epochs = 250000
-periodic_plots = False
+epochs = 500
+periodic_plots = True
 show_last_plot = True
-leap = 2000
-seed = 1
-recompute = False
-torch.manual_seed(seed)
+leap = 200
+
+# Pretraining params
+pretrain = True
+pre_epochs = 2000
+pre_leap = 500
+path_pretrain = './pre.pt'
+
+# Computation graph prameters
+computation_graph = True
+show_attrs = False
+show_saved = False
+retain_graph = True
+create_graph = True
+cg_name = f'cg_retain{retain_graph}_create{create_graph}'
 
 # Mesh parameters
-N = 100 # points per dimension
-a = -8
-b = 8
-h = (b-a) / (N-1)
+N = 50 # points per dimension
+a = -5
+b = 5
+h = (b-a) / (N)
 
 loss_fn = HO_energy
 
 # Training hyperparameters
-dims = [1, 2, 3]
-hidden_neurons = [5, 20, 50, 80, 100, 150, 200, 300]
-actfuns = ['Sigmoid', 'Softplus', 'ReLU']
+dims = [3]
+hidden_neurons = [300]
+actfuns = ['Sigmoid']
 optimizers = ['RMSprop']
-learning_rates = [0.005, 0.01, 0.05, 0.1] # Use decimal notation 
+learning_rates = [0.05] # Use decimal notation 
 epsilon = 1e-8
-smoothing_constants = [0.7, 0.8, 0.9]
-momenta = [0.0, 0.9]
+smoothing_constants = [0.9]
+momenta = [0.0]
 
 ################### MESH PREPARATION ###################
 """
@@ -105,7 +125,7 @@ for d in split(dims, nchunks)[which_chunk]:
                                                              optimizers, actfuns,
                                                              learning_rates,
                                                              smoothing_constants,
-                                                             momenta):
+                                                             momenta):            
         print(f'\nD = {d}, Arch = {arch}, Neurons = {nhid}, Actfun = {actfun}, ' \
                     f'lr = {lr}, Alpha = {alpha}, Mu = {mom}, ' \
                       f'Seed = {seed}')
@@ -154,8 +174,10 @@ for d in split(dims, nchunks)[which_chunk]:
         ################### MESH PREPARATION ###################
         # We construct the mesh. It has dimension (d*N^d), because there are N^d 
         # points and each one is d-dimensional.
-        x = torch.linspace(a, b, N, requires_grad=True)
+        x = torch.linspace(a, b, N, requires_grad=False)
         mesh = torch.cartesian_prod(*(x for _ in range(d))).reshape(N**d, d)
+        mesh.requires_grad_() # adding the 'requires_grad' property here makes the 
+                              # computation graph simpler
         x2_y2_z2 = torch.sum(mesh**2, dim=1).clone().detach()
         
         ################### INTEGRATION ###################
@@ -184,16 +206,52 @@ for d in split(dims, nchunks)[which_chunk]:
         psi_ann = net_arch_map[arch](Nin, nhid, Nout, W1, 
                                      Ws2, B, W2, Wd2, actfun).to(device)
         try:
-            optimizer = getattr(torch.optim, optim)(params=psi_ann.parameters(),
-                                            lr=lr,
-                                            eps=epsilon,
-                                            alpha=alpha,
-                                            momentum=mom)
+            if optim == 'AdaHessian':
+                optimizer = AdaHessian(params=psi_ann.parameters())
+            else:
+                optimizer = getattr(torch.optim, optim)(params=psi_ann.parameters(),
+                                                lr=lr,
+                                                eps=epsilon,
+                                                alpha=alpha,
+                                                momentum=mom)
         except TypeError:
             optimizer = getattr(torch.optim, optim)(params=psi_ann.parameters(),
                                             lr=lr)
+            
+        # Pretraining 
+        if pretrain:
+            ov_accum = []
+            # Epoch loop
+            for t in tqdm(range(pre_epochs)):
+                ov, loss, psi = overlap(model=psi_ann, # ov is really 1-<ANN|targ>^2
+                                target_dD=target_dD,
+                                w_i=w_trpz,
+                                train_data=mesh)
+                ov_accum.append(ov.item())
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
                 
-        # Training loop
+                if (t % pre_leap) == 0:
+                    pretraining_plots(d=d,
+                                      mesh_1d=x_ov,
+                                      mesh=mesh,
+                                      psi_normalized=psi, 
+                                      target_dD=target_dD,
+                                      nepochs=t,
+                                      overlap_accum=ov_accum)
+                        
+            pretrain_state_dict = {'model':psi_ann.state_dict(),
+                                   'optimizer':optimizer.state_dict()}
+            torch.save(pretrain_state_dict, path_pretrain)
+                
+        # Training
+        if pretrain:
+            optim_stdict = torch.load(path_pretrain)['optimizer']
+            model_stdict = torch.load(path_pretrain)['model']
+            psi_ann.load_state_dict(model_stdict)
+            optimizer.load_state_dict(optim_stdict)
+            psi_ann.train()
         path_plot = f'saved_models/HO/{d}D/{arch}/nhid{nhid}/optim{optim}/' \
                     f'{actfun}/lr{lr}/alpha{alpha}/mu{mom}/plots/' \
                     f'seed{seed}_epochs{epochs}'
@@ -201,19 +259,33 @@ for d in split(dims, nchunks)[which_chunk]:
         E_accum = []
         K_accum = []
         U_accum = []
+        psi_accum = []
         overlap_accum = []
         
         for t in tqdm(range(epochs)):
-            E, K, U, psi, overlap = train_loop(model=psi_ann, 
+            loss_fn = HO_energy_2der if nders == 2 else HO_energy
+            E, K, U, psi, overlap = loss_fn(model=psi_ann, 
                                       train_data=mesh, 
                                       w_i=w_trpz, 
                                       x2_y2_z2=x2_y2_z2,
                                       target_dD=target_dD,
-                                      loss_fn=loss_fn, 
-                                      optimizer=optimizer)
+                                      retain_graph=retain_graph,
+                                      create_graph=create_graph)
+            #show_layers(psi_ann)
+            if t == 0:
+                if computation_graph:
+                    make_dot(E, params=dict(list(psi_ann.named_parameters())), 
+                             show_attrs=show_attrs, show_saved=show_saved).render(cg_name, 
+                                                                                  format='pdf')
+                print(f'\Right after pretraining: \nOverlap: {overlap}, \nK: {K}, ' \
+                      f'\nU: {U}, \nE: {E}')
+            optimizer.zero_grad()
+            E.backward()
+            optimizer.step()
             E_accum.append(E.item())
             K_accum.append(K.item())
             U_accum.append(U.item())
+            psi_accum.append(psi.detach())
             overlap_accum.append(overlap.item())
             
             # Plotting

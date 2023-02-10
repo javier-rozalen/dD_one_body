@@ -30,12 +30,13 @@ save_plot = False
 epochs = 250000
 periodic_plots = True
 show_last_plot = True
-leap = 50
+leap = 20
 recompute = False
 seed = 2
 torch.manual_seed(seed)
 pretrain = True
 pre_epochs = 5000
+path_pretrain = './pre.pt'
 
 # Test mesh parameters
 a = -8
@@ -46,8 +47,8 @@ d = 1
 nwalkers = 1000
 ntest = nwalkers
 x0 = torch.randn(nwalkers, d, requires_grad=False)
-burn_in = 100
-delta_MC = 5.
+burn_in = 1000
+delta_MC = 0.5
 mean = torch.tensor(0.)
 std = torch.tensor(1)
 
@@ -144,16 +145,14 @@ if pretrain:
         if (t % 1000) == 0:
             fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(12, 8))
             ax[0].plot([i for i in range(t + 1)], ov_accum)
-            ax[1].plot(x_pre.detach().numpy(), psi.detach().numpy(), label='$\psi_{\mathrm{ANN}}$')
+            ax[1].plot(x_pre.detach().numpy(), psi.detach().numpy(), 
+                       label='$\psi_{\mathrm{ANN}}$')
             ax[1].plot(x_pre.detach().numpy(), target_dD.numpy())
             ax[1].set_title('Pretraining', fontsize=17)
             plt.show()
-            
-    optimizer = getattr(torch.optim, 'RMSprop')(params=psi_ann.parameters(),
-                                    lr=lr,
-                                    eps=epsilon,
-                                    alpha=alpha,
-                                    momentum=momentum)
+    pretrain_state_dict = {'model':psi_ann.state_dict(),
+                           'optimizer':optimizer.state_dict()}
+    torch.save(pretrain_state_dict, path_pretrain)
         
 ################### EPOCH LOOP ###################
 start_time_all = time.time()
@@ -169,11 +168,19 @@ K_accum = []
 U_accum = []
 overlap_accum = []
 
+if pretrain:
+    optim_stdict = torch.load(path_pretrain)['optimizer']
+    model_stdict = torch.load(path_pretrain)['model']
+    psi_ann.load_state_dict(model_stdict)
+    optimizer.load_state_dict(optim_stdict)
+    psi_ann.train()
+
 # Epoch loop
 loss_fn = HO_energy
 for t in tqdm(range(epochs)):
     # MCMC: we sample dD points distributed according to psi**2
     x0 = torch.randn(nwalkers, d, requires_grad=False)
+    #print(x0)
     for _ in range(burn_in):
         ksi = torch.normal(mean=mean, std=std, size=(nwalkers, d))
         y = x0 + delta_MC * ksi
@@ -182,8 +189,6 @@ for t in tqdm(range(epochs)):
         comp = torch.gt(r, p).unsqueeze(1).expand(nwalkers, d)
         x0 = torch.where(comp, y, x0)
     
-    #x = torch.linspace(a, b, N, requires_grad=True)
-    #mesh = torch.cartesian_prod(*(x for _ in range(d))).reshape(N**d, d)
     mesh = x0.requires_grad_()
     x2_y2_z2 = torch.sum(mesh**2, dim=1).clone().detach()
     
@@ -202,20 +207,21 @@ for t in tqdm(range(epochs)):
     
     # Plotting
     if (((t+1) % leap) == 0 and periodic_plots) or t == epochs-1:
-        minimisation_plots(train_data=mesh,
-                           x_axis=[i for i in range(t+1)], 
-                           y_axis=E_accum,
-                           K=K_accum,
-                           U=U_accum,
-                           y_exact=E_theoretical,
-                           d=d,
-                           x=x_test,
-                           y=x_test,
-                           z=psi, 
-                           overlap=overlap_accum,
-                           path_plot=path_plot,
-                           show_last_plot=show_last_plot,
-                           save=save_plot if t == epochs - 1 else False)
+        if True:
+            minimisation_plots(train_data=mesh,
+                               x_axis=[i for i in range(t+1)], 
+                               y_axis=E_accum,
+                               K=K_accum,
+                               U=U_accum,
+                               y_exact=E_theoretical,
+                               d=d,
+                               x=x_test,
+                               y=x_test,
+                               z=psi, 
+                               overlap=overlap_accum,
+                               path_plot=path_plot,
+                               show_last_plot=show_last_plot,
+                               save=save_plot if t == epochs - 1 else False)
         
 # Console feedback
 print('\nModel trained!')
